@@ -14,6 +14,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.14.0"
+          registry-url: "https://registry.npmjs.org"
       - uses: jdx/mise-action@v2
       - name: Install locked dependencies
         run: mise run install
@@ -28,10 +32,7 @@ jobs:
         run: mise run pack
       - name: Publish to npm
         shell: pwsh
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:NPM_TOKEN)) { throw 'Set the NPM_TOKEN repository secret before creating a release tag.' }
           Set-Location packages/opencode-windows-notifications
           npm publish --access public
       - name: Create GitHub release
