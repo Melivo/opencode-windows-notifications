@@ -1,7 +1,12 @@
 import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin"
 import { platform as runtimePlatform } from "node:process"
 
-import type { EligibleEvent, HostContext, Notify } from "./contract.js"
+import type {
+  EligibleEvent,
+  HostContext,
+  Notify,
+  PermissionRequest,
+} from "./contract.js"
 import { createOnEvent, createOnPermission } from "./eligibility/index.js"
 import {
   createNotify,
@@ -77,6 +82,27 @@ function transportLogBody(entry: TransportLogEntry): HostLogBody {
   }
 }
 
+function permissionRequestFromEvent(event: object): PermissionRequest | undefined {
+  if (
+    !("type" in event) ||
+    event.type !== "permission.asked" ||
+    !("properties" in event) ||
+    typeof event.properties !== "object" ||
+    event.properties === null ||
+    !("id" in event.properties) ||
+    typeof event.properties.id !== "string" ||
+    !("sessionID" in event.properties) ||
+    typeof event.properties.sessionID !== "string"
+  ) {
+    return undefined
+  }
+
+  return {
+    id: event.properties.id,
+    sessionID: event.properties.sessionID,
+  }
+}
+
 export function createPlugin(
   dependencies: CreatePluginDependencies = {},
 ): Plugin {
@@ -111,6 +137,12 @@ export function createPlugin(
       let projected: EligibleEvent | undefined
 
       try {
+        const permission = permissionRequestFromEvent(event)
+        if (permission) {
+          await onPermission(permission, hostContext)
+          return
+        }
+
         switch (event.type) {
           case "message.updated": {
             const { info } = event.properties

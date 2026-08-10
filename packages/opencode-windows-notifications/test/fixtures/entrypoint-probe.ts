@@ -4,9 +4,9 @@ import { createOpencodeClient } from "@opencode-ai/sdk"
 import type { PluginInput } from "@opencode-ai/plugin"
 import type {
   EventMessageUpdated,
+  EventPermissionAsked,
   EventSessionError,
   EventSessionIdle,
-  Permission,
   Session,
 } from "@opencode-ai/sdk"
 import type { Notification, Notify } from "../../src/contract.js"
@@ -113,22 +113,24 @@ const error: EventSessionError = {
   type: "session.error",
   properties: { sessionID: "session-root" },
 }
-const permission: Permission = {
-  id: "permission-1",
-  type: "bash",
-  sessionID: "session-root",
-  messageID: "message-1",
-  title: "Run command",
-  metadata: {},
-  time: { created: 1 },
+const permission: EventPermissionAsked = {
+  id: "event-permission-1",
+  type: "permission.asked",
+  properties: {
+    id: "permission-1",
+    sessionID: "session-root",
+    permission: "bash",
+    patterns: [],
+    metadata: {},
+    always: [],
+  },
 }
 
 await hooks.event({ event: completed })
 await hooks.event({ event: idle })
 await hooks.event({ event: error })
-if (!hooks["permission.ask"]) throw new Error("missing typed permission.ask hook")
-await hooks["permission.ask"](permission, { status: "ask" })
-await hooks["permission.ask"](permission, { status: "ask" })
+await hooks.event({ event: permission })
+await hooks.event({ event: permission })
 await Promise.resolve()
 await Bun.sleep(20)
 

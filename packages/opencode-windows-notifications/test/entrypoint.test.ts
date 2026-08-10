@@ -4,6 +4,7 @@ import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import type {
   EventMessageUpdated,
+  EventPermissionAsked,
   EventSessionError,
   EventSessionIdle,
   Permission,
@@ -143,6 +144,24 @@ function permission(sessionID: string, id = "permission-1"): Permission {
   }
 }
 
+function permissionAsked(
+  sessionID: string,
+  id = "permission-1",
+): EventPermissionAsked {
+  return {
+    id: `event-${id}`,
+    type: "permission.asked",
+    properties: {
+      id,
+      sessionID,
+      permission: "external_directory",
+      patterns: ["C:/Users/phili/Downloads/**"],
+      metadata: {},
+      always: [],
+    },
+  }
+}
+
 async function requireEventHook(
   factory: ReturnType<typeof createPlugin>,
   input: PluginInput,
@@ -200,7 +219,7 @@ describe("documented server plugin entrypoint", () => {
     )
   })
 
-  test("uses the typed permission hook and leaves unproved events blocked", async () => {
+  test("handles runtime permission events through the documented event hook", async () => {
     const entrypointSource = await Bun.file(
       resolve(packageRoot, "src/index.ts"),
     ).text()
@@ -216,13 +235,8 @@ describe("documented server plugin entrypoint", () => {
     expect(factorySource).toContain('import type { Hooks, Plugin, PluginInput }')
     expect(source).not.toContain("PluginModule")
     expect(source).not.toContain("@opencode-ai/plugin/tui")
-    expect(factorySource).toContain('NonNullable<Hooks["permission.ask"]>')
-    expect(contractSource).toContain(
-      'Parameters<NonNullable<Hooks["permission.ask"]>>[0]',
-    )
-    expect(factorySource).not.toContain("permission.asked")
-    expect(source).not.toContain('case "permission.asked"')
-    expect(source).not.toContain("EventPermissionUpdated")
+    expect(factorySource).toContain('event.type !== "permission.asked"')
+    expect(contractSource).toContain("export type PermissionRequest")
     expect(source).not.toContain('case "session.error"')
     expect(source).not.toContain("console.")
     expect(source).not.toContain("process.stdout")
@@ -337,7 +351,7 @@ describe("internal plugin factory", () => {
     ])
   })
 
-  test("handles each typed primary-session permission exactly once", async () => {
+  test("handles each runtime primary-session permission event exactly once", async () => {
     const harness = createHostHarness()
     const notifications: Notification[] = []
     const testPlugin = createPlugin({
@@ -350,17 +364,20 @@ describe("internal plugin factory", () => {
       },
     })
     const hooks = await testPlugin(harness.input)
+    const onEvent = hooks.event
     const onPermissionAsk = hooks["permission.ask"]
+    if (!onEvent) throw new Error("missing documented event hook")
     if (!onPermissionAsk) throw new Error("missing typed permission.ask hook")
     const input = Object.freeze(permission("session-root"))
     const output: { status: "ask" | "deny" | "allow" } = Object.freeze({
       status: "ask",
     })
 
+    await onEvent({ event: permissionAsked("session-root") })
+    await onEvent({ event: permissionAsked("session-root") })
     await onPermissionAsk(input, output)
-    await onPermissionAsk(input, output)
-    await onPermissionAsk(permission("session-root", " "), output)
-    await onPermissionAsk(permission(" ", "permission-2"), output)
+    await onEvent({ event: permissionAsked("session-root", " ") })
+    await onEvent({ event: permissionAsked(" ", "permission-2") })
 
     expect(notifications).toEqual([
       {
@@ -370,7 +387,11 @@ describe("internal plugin factory", () => {
         sessionID: "session-root",
       },
     ])
-    expect(harness.sessionPaths).toEqual(["session-root", "session-root"])
+    expect(harness.sessionPaths).toEqual([
+      "session-root",
+      "session-root",
+      "session-root",
+    ])
     expect(output).toEqual({ status: "ask" })
   })
 

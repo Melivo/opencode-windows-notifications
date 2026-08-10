@@ -30,7 +30,7 @@ The verified OpenCode 1.18.16 npm server-plugin loader resolves the package thro
 
 ## One-time host setting
 
-To avoid duplicate desktop notifications, set OpenCode's host attention notification flag once:
+To avoid duplicate desktop notifications, set OpenCode's TUI attention notification flag once in `~/.config/opencode/tui.jsonc`:
 
 ```json
 {
@@ -44,15 +44,15 @@ If this setting is omitted while host attention notifications remain enabled, te
 
 ## Implemented events and fixed toast text
 
-The package implements the typed `session.idle` event path and the dedicated permission hook:
+The package implements the typed `session.idle` event path and the runtime permission event:
 
 | Typed host signal | Status | Title | Body |
 | --- | --- | --- | --- |
 | `session.idle` | Implemented | `OpenCode` | `Antwort abgeschlossen` |
-| `Hooks["permission.ask"]` | Implemented | `OpenCode` | `Aktion erfordert deine Freigabe` |
+| `permission.asked` | Implemented | `OpenCode` | `Aktion erfordert deine Freigabe` |
 | `session.error` | Excluded | n/a | n/a |
 
-In `@opencode-ai/plugin@1.18.16`, `Hooks["permission.ask"]` accepts the SDK `Permission` input directly. The pinned `@opencode-ai/sdk@1.18.16` type declares required `Permission.id: string` and `Permission.sessionID: string` fields. The implementation reads those fields directly, rejects blank IDs, and does not use the unrelated event-based `permission.asked`, casts, `any`, `unknown` narrowing, or a local replacement permission union. Repeated delivery of the same stable permission ID in a primary session causes one transport attempt while that ID is retained in the bounded per-session dedupe set.
+OpenCode 1.18.16 emits runtime permission requests as `permission.asked` events. The implementation validates the event's `id` and `sessionID`, rejects blank IDs, and routes them through the same primary-session eligibility and bounded deduplication path. Repeated delivery of the same stable permission ID causes one transport attempt.
 
 `session.error` is excluded because no stable, dedicated error transition or dedupe identifier has been confirmed. The generic event envelope ID is not treated as an error-transition ID.
 

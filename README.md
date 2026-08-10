@@ -27,7 +27,7 @@ OpenCode adds the package to its `opencode.json` plugin array. To avoid duplicat
 | Signal | Fixed toast body |
 | --- | --- |
 | `session.idle` | `Answer finished` |
-| `Hooks["permission.ask"]` | `Action needs permission` |
+| `permission.asked` | `Action needs permission` |
 
 Error notifications are intentionally not sent because OpenCode does not currently expose a stable error identifier for safe deduplication.
 
@@ -46,7 +46,7 @@ If OpenCode does not load the plugin after installation, reinstall it with:
 opencode plugin opencode-windows-notifications --force
 ```
 
-Ensure the OpenCode version is between `1.18.16` and `1.19.0`, and verify that `attention.notifications` is disabled if duplicate notifications appear.
+Ensure the OpenCode version is between `1.18.16` and `1.19.0`, and verify that `attention.notifications` is disabled in `~/.config/opencode/tui.jsonc` if duplicate notifications appear.
 
 ## License
 

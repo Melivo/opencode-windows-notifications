@@ -1,5 +1,3 @@
-import type { Hooks } from "@opencode-ai/plugin"
-
 export type NotificationEvent =
   | "session.idle"
   | "session.error"
@@ -57,8 +55,13 @@ export type CreateOnEvent = (
   dependencies: Readonly<{ notify: Notify }>,
 ) => OnEvent
 
+export type PermissionRequest = Readonly<{
+  id: string
+  sessionID: string
+}>
+
 export type OnPermission = (
-  permission: Parameters<NonNullable<Hooks["permission.ask"]>>[0],
+  permission: PermissionRequest,
   hostContext: HostContext,
 ) => Promise<void>
 
