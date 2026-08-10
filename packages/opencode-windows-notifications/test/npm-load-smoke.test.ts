@@ -491,7 +491,7 @@ test("loads the candidate exactly once through the isolated OpenCode 1.18.16 npm
       gateBlocked("the package and this loader proof require win32")
     }
 
-    const opencodeBin = Bun.which("opencode")
+    const opencodeBin = process.env.OPENCODE_BIN || Bun.which("opencode")
     const tar = Bun.which("tar")
     if (!opencodeBin) gateBlocked("real OpenCode executable was not found")
     if (!tar) gateBlocked("a local tar reader is required to audit the candidate")

@@ -25,8 +25,13 @@ jobs:
       - name: Install OpenCode
         run: |
           winget install --exact --id SST.opencode --version 1.18.16 --source winget --accept-package-agreements --accept-source-agreements
-          $version = opencode --version
+          $opencodeBin = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\opencode.exe'
+          if (-not (Test-Path -LiteralPath $opencodeBin)) { throw "OpenCode was installed but not found at $opencodeBin." }
+          $version = & $opencodeBin --version
           if ($version -ne '1.18.16') { throw "Expected OpenCode 1.18.16, got $version." }
+          $opencodeDir = Split-Path -Parent $opencodeBin
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $opencodeDir
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "OPENCODE_BIN=$opencodeBin"
       - name: Download Process Monitor
         run: |
           Invoke-WebRequest https://download.sysinternals.com/files/ProcessMonitor.zip -OutFile $env:RUNNER_TEMP\ProcessMonitor.zip
