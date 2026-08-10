@@ -1,0 +1,13 @@
+# oma docs generated artifacts
+docs/generated/
+
+# Local dependencies and generated package artifacts
+**/node_modules/
+packages/opencode-windows-notifications/dist/
+packages/opencode-windows-notifications/coverage/
+packages/opencode-windows-notifications/*.tgz
+
+# Local agent configuration, runtime state, and code-intelligence artifacts
+.agents/
+.opencode/
+.serena/

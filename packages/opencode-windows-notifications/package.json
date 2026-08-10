@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "opencode-windows-notifications",
+  "version": "0.0.0",
+  "description": "Native Windows notifications for OpenCode",
+  "type": "module",
+  "os": [
+    "win32"
+  ],
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./server": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "main": "./dist/src/index.js",
+  "scripts": {
+    "build": "bun -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\" && tsc --project tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "bun run test:regular",
+    "test:regular": "bun test test/entrypoint.test.ts test/eligibility.test.ts test/transport.test.ts test/event-transport.test.ts test/smoke-harness.test.ts --pass-with-no-tests",
+    "test:coverage": "bun test test/entrypoint.test.ts test/eligibility.test.ts test/transport.test.ts test/event-transport.test.ts test/smoke-harness.test.ts --coverage --coverage-reporter=lcov && bun scripts/check-source-coverage.ts 80",
+    "test:loader": "bun test test/npm-load-smoke.test.ts"
+  },
+  "engines": {
+    "opencode": ">=1.18.16 <1.19.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "1.18.16",
+    "typescript": "5.8.2"
+  }
+}
