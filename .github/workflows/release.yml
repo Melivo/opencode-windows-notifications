@@ -33,6 +33,13 @@ jobs:
       - name: Publish to npm
         shell: pwsh
         run: |
+          $package = (Get-Content packages/opencode-windows-notifications/package.json -Raw | ConvertFrom-Json).name
+          $version = (Get-Content packages/opencode-windows-notifications/package.json -Raw | ConvertFrom-Json).version
+          npm view "$package@$version" version | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "$package@$version is already published; skipping npm publish."
+            exit 0
+          }
           Set-Location packages/opencode-windows-notifications
           npm publish --access public
       - name: Create GitHub release
