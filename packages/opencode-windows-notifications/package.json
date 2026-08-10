@@ -1,8 +1,27 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-windows-notifications",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Native Windows notifications for OpenCode",
+  "keywords": [
+    "opencode",
+    "plugin",
+    "windows",
+    "notifications",
+    "toast"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Melivo/opencode-windows-notifications.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Melivo/opencode-windows-notifications/issues"
+  },
+  "homepage": "https://github.com/Melivo/opencode-windows-notifications#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "os": [
     "win32"

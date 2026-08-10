@@ -21,6 +21,10 @@ run = "cd packages/opencode-windows-notifications && bun run test:coverage"
 description = "Run the isolated OpenCode loader test"
 run = "cd packages/opencode-windows-notifications && bun run test:loader"
 
+[tasks.pack]
+description = "Validate the package that will be published to npm"
+run = "cd packages/opencode-windows-notifications && npm pack --dry-run"
+
 [tasks.verify]
 description = "Run local validation that does not require the OpenCode CLI"
 run = "mise run typecheck && mise run build && mise run coverage"
