@@ -9,10 +9,11 @@ import {
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, relative, resolve, sep } from "node:path"
-import { test } from "bun:test"
+import { expect, test } from "bun:test"
 
 import {
   startLoopbackRegistry,
+  type LoopbackRegistryAudit,
   type RegistryPackage,
 } from "./fixtures/opencode-json-load/loopback-registry.js"
 
@@ -67,6 +68,118 @@ async function terminateProcessTree(pid: number): Promise<void> {
     process.kill(-pid, "SIGKILL")
   } catch {
     // The process may already have exited.
+  }
+}
+
+type LoadEvidenceProbe = Readonly<{
+  ready: boolean
+  summary: string
+}>
+
+type LoaderResult = Readonly<{
+  stdout: string
+  stderr: string
+}>
+
+async function captureStream(
+  stream: ReadableStream<Uint8Array>,
+  append: (chunk: string) => void,
+): Promise<void> {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    append(decoder.decode(value, { stream: true }))
+  }
+  append(decoder.decode())
+}
+
+async function waitForExit(
+  exited: Promise<number>,
+  timeoutMs: number,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      exited.then(() => undefined),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("process tree termination timeout")), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+async function runLoaderUntilEvidence(
+  command: readonly string[],
+  options: Readonly<{
+    cwd: string
+    env: Record<string, string>
+    timeoutMs: number
+    probe: (output: string) => Promise<LoadEvidenceProbe>
+  }>,
+): Promise<LoaderResult> {
+  const child = Bun.spawn(command, {
+    cwd: options.cwd,
+    env: options.env,
+    stdout: "pipe",
+    stderr: "pipe",
+    ...(process.platform !== "win32" ? { detached: true } : {}),
+  })
+  let stdout = ""
+  let stderr = ""
+  let exited = false
+  let processTreeStopped = false
+  const stdoutPromise = captureStream(child.stdout, (chunk) => { stdout += chunk })
+  const stderrPromise = captureStream(child.stderr, (chunk) => { stderr += chunk })
+  const drainOutput = () => Promise.all([stdoutPromise, stderrPromise]).then(() => undefined)
+  void child.exited.then(() => { exited = true })
+  const deadline = Date.now() + options.timeoutMs
+
+  try {
+    while (true) {
+      const probe = await options.probe(`${stdout}\n${stderr}`)
+      if (probe.ready) {
+        await terminateProcessTree(child.pid)
+        await waitForExit(child.exited, 10_000)
+        processTreeStopped = true
+        await drainOutput()
+
+        const finalProbe = await options.probe(`${stdout}\n${stderr}`)
+        if (!finalProbe.ready) {
+          gateBlocked(`loader evidence changed before process-tree termination completed: ${finalProbe.summary}`, `${stdout}\n${stderr}`)
+        }
+        return { stdout, stderr }
+      }
+
+      if (exited) {
+        await drainOutput()
+        await terminateProcessTree(child.pid)
+        processTreeStopped = true
+        const finalProbe = await options.probe(`${stdout}\n${stderr}`)
+        if (!finalProbe.ready) {
+          gateBlocked(`real OpenCode process exited before complete load evidence: ${finalProbe.summary}`, `${stdout}\n${stderr}`)
+        }
+        return { stdout, stderr }
+      }
+
+      if (Date.now() >= deadline) {
+        gateBlocked(
+          `real OpenCode loader did not produce complete load evidence before ${options.timeoutMs}ms: ${probe.summary}`,
+          `${stdout}\n${stderr}`,
+        )
+      }
+      await Bun.sleep(25)
+    }
+  } finally {
+    if (!processTreeStopped) {
+      await terminateProcessTree(child.pid).catch(() => undefined)
+      await waitForExit(child.exited, 10_000).catch(() => undefined)
+    }
+    await drainOutput().catch(() => undefined)
   }
 }
 
@@ -482,6 +595,72 @@ async function makeIsolatedEnvironment(
   }
 }
 
+function hasExpectedRegistryResolution(
+  audit: LoopbackRegistryAudit,
+  dependencyClosure: readonly RegistryPackage[],
+  candidateSha256: string,
+): boolean {
+  if (
+    audit.blockedRequests.length !== 0 ||
+    audit.metadataRequests < 1 ||
+    audit.tarballRequests !== 1 ||
+    audit.servedTarballSha256 !== candidateSha256
+  ) {
+    return false
+  }
+
+  return dependencyClosure.every((artifact) => {
+    const requests = audit.packageRequests[artifact.packageName]
+    return requests?.metadata >= 1 &&
+      requests.tarball === 1 &&
+      audit.servedTarballSha256ByPackage[artifact.packageName] === artifact.tarballSha256
+  })
+}
+
+test("terminates a loader process after incremental evidence instead of awaiting natural exit", async () => {
+  const evidence = "initialization build-marker local-registry-resolution"
+  const startedAt = Date.now()
+  const result = await runLoaderUntilEvidence([
+    process.execPath,
+    "-e",
+    `console.log(${JSON.stringify(evidence)}); setInterval(() => {}, 1_000)`,
+  ], {
+    cwd: packageRoot,
+    env: {},
+    timeoutMs: 2_000,
+    probe: async (output) => ({
+      ready: countOccurrences(output, evidence) === 1,
+      summary: `evidence=${countOccurrences(output, evidence)}`,
+    }),
+  })
+
+  expect(countOccurrences(result.stdout, evidence)).toBe(1)
+  expect(Date.now() - startedAt).toBeLessThan(2_000)
+}, 10_000)
+
+test("fails closed when loader evidence is absent at the deadline", async () => {
+  let failure: unknown
+  try {
+    await runLoaderUntilEvidence([
+      process.execPath,
+      "-e",
+      "setInterval(() => {}, 1_000)",
+    ], {
+      cwd: packageRoot,
+      env: {},
+      timeoutMs: 100,
+      probe: async () => ({ ready: false, summary: "evidence=absent" }),
+    })
+  } catch (error) {
+    failure = error
+  }
+
+  expect(failure).toBeInstanceOf(Error)
+  expect((failure as Error).message).toContain(
+    "real OpenCode loader did not produce complete load evidence before 100ms: evidence=absent",
+  )
+}, 10_000)
+
 test("loads the candidate exactly once through the isolated OpenCode 1.18.16 npm loader", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencode-npm-load-"))
   let registry: ReturnType<typeof startLoopbackRegistry> | undefined
@@ -607,17 +786,59 @@ test("loads the candidate exactly once through the isolated OpenCode 1.18.16 npm
       )
     }
 
-    const loaded = await run([
+    const expectedResolverPath = join(
+      childEnv.XDG_CACHE_HOME,
+      "opencode",
+      "packages",
+      PACKAGE_SPEC,
+      "node_modules",
+      PACKAGE_NAME,
+    )
+    const isolatedRoot = await realpath(root)
+    const loaded = await runLoaderUntilEvidence([
       opencodeBin,
       "debug",
       "config",
       "--print-logs",
       "--log-level",
       "DEBUG",
-    ], { cwd: root, env: childEnv, timeoutMs: 45_000 })
-    if (loaded.exitCode !== 0) {
-      gateBlocked("real OpenCode loader rejected the isolated candidate", loaded.stderr)
-    }
+    ], {
+      cwd: root,
+      env: childEnv,
+      timeoutMs: 45_000,
+      probe: async (loaderEvidence) => {
+        const initializationCount = countOccurrences(loaderEvidence, "Server plugin initialized")
+        const markerCount = countOccurrences(loaderEvidence, buildMarker)
+        const audit = registry!.audit()
+        const registryResolution = hasExpectedRegistryResolution(
+          audit,
+          dependencyClosure.packages,
+          candidateSha256,
+        )
+        let resolverPath = false
+        try {
+          resolverPath = isWithin(isolatedRoot, await realpath(expectedResolverPath))
+        } catch {
+          // The loader may not have materialized its cache path yet.
+        }
+
+        return {
+          ready: initializationCount === 1 &&
+            markerCount === 1 &&
+            registryResolution &&
+            resolverPath,
+          summary: [
+            `initializations=${initializationCount}`,
+            `markers=${markerCount}`,
+            `candidate-metadata=${audit.metadataRequests}`,
+            `candidate-tarballs=${audit.tarballRequests}`,
+            `registry-resolution=${registryResolution}`,
+            `resolver-path=${resolverPath}`,
+            `blocked-requests=${audit.blockedRequests.length}`,
+          ].join(", "),
+        }
+      },
+    })
 
     const audit = registry.audit()
     if (audit.blockedRequests.length !== 0) {
@@ -645,21 +866,12 @@ test("loads the candidate exactly once through the isolated OpenCode 1.18.16 npm
       }
     }
 
-    const expectedResolverPath = join(
-      childEnv.XDG_CACHE_HOME,
-      "opencode",
-      "packages",
-      PACKAGE_SPEC,
-      "node_modules",
-      PACKAGE_NAME,
-    )
     let resolvedPackagePath: string
     try {
       resolvedPackagePath = await realpath(expectedResolverPath)
     } catch {
       gateBlocked(`source-derived resolver path was not used: ${expectedResolverPath}`)
     }
-    const isolatedRoot = await realpath(root)
     if (!isWithin(isolatedRoot, resolvedPackagePath)) {
       gateBlocked(`resolver escaped the isolated root: ${resolvedPackagePath}`)
     }
