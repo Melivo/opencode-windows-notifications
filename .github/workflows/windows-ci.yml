@@ -15,20 +15,18 @@ jobs:
     defaults:
       run:
         shell: pwsh
-        working-directory: packages/opencode-windows-notifications
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.11
+      - uses: jdx/mise-action@v2
       - name: Install locked dependencies
-        run: bun install --frozen-lockfile
-      - name: Typecheck
-        run: bun run typecheck
-      - name: Build
-        run: bun run build
-      - name: Regular tests and source coverage
-        run: bun run test:coverage
+        run: mise run install
+      - name: Typecheck, build, and source coverage
+        run: mise run verify
+      - name: Install OpenCode
+        run: |
+          winget install --exact --id SST.opencode --version 1.18.16 --source winget --accept-package-agreements --accept-source-agreements
+          $version = opencode --version
+          if ($version -ne '1.18.16') { throw "Expected OpenCode 1.18.16, got $version." }
       - name: Download Process Monitor
         run: |
           Invoke-WebRequest https://download.sysinternals.com/files/ProcessMonitor.zip -OutFile $env:RUNNER_TEMP\ProcessMonitor.zip
@@ -41,7 +39,7 @@ jobs:
           Start-Sleep -Seconds 2
           $loaderExit = 1
           try {
-            bun run test:loader
+            mise run "test:loader"
             $loaderExit = $LASTEXITCODE
           } finally {
             & $procmon /Terminate

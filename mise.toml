@@ -1,0 +1,26 @@
+[tools]
+bun = "1.3.11"
+
+[tasks.install]
+description = "Install the locked plugin dependencies"
+run = "cd packages/opencode-windows-notifications && bun install --frozen-lockfile"
+
+[tasks.typecheck]
+description = "Typecheck the plugin"
+run = "cd packages/opencode-windows-notifications && bun run typecheck"
+
+[tasks.build]
+description = "Build the plugin"
+run = "cd packages/opencode-windows-notifications && bun run build"
+
+[tasks.coverage]
+description = "Run regular tests with source-only coverage"
+run = "cd packages/opencode-windows-notifications && bun run test:coverage"
+
+[tasks."test:loader"]
+description = "Run the isolated OpenCode loader test"
+run = "cd packages/opencode-windows-notifications && bun run test:loader"
+
+[tasks.verify]
+description = "Run local validation that does not require the OpenCode CLI"
+run = "mise run typecheck && mise run build && mise run coverage"
