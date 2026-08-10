@@ -25,8 +25,14 @@ jobs:
       - name: Install OpenCode
         run: |
           winget install --exact --id SST.opencode --version 1.18.16 --source winget --accept-package-agreements --accept-source-agreements
-          $opencodeBin = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\opencode.exe'
-          if (-not (Test-Path -LiteralPath $opencodeBin)) { throw "OpenCode was installed but not found at $opencodeBin." }
+          $wingetPackages = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+          $packageDirectory = Get-ChildItem -LiteralPath $wingetPackages -Directory |
+            Where-Object Name -Like 'SST.opencode_*' |
+            Select-Object -First 1
+          if (-not $packageDirectory) { throw 'Winget installed OpenCode but its package directory was not found.' }
+          $opencodeBin = Get-ChildItem -LiteralPath $packageDirectory.FullName -Filter opencode.exe -File -Recurse |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $opencodeBin) { throw "OpenCode was installed but its executable was not found under $($packageDirectory.FullName)." }
           $version = & $opencodeBin --version
           if ($version -ne '1.18.16') { throw "Expected OpenCode 1.18.16, got $version." }
           $opencodeDir = Split-Path -Parent $opencodeBin
