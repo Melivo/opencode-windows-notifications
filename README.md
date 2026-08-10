@@ -26,8 +26,8 @@ OpenCode adds the package to its `opencode.json` plugin array. To avoid duplicat
 
 | Signal | Fixed toast body |
 | --- | --- |
-| `session.idle` | `Antwort abgeschlossen` |
-| `Hooks["permission.ask"]` | `Aktion erfordert deine Freigabe` |
+| `session.idle` | `Answer finished` |
+| `Hooks["permission.ask"]` | `Action needs permission` |
 
 Error notifications are intentionally not sent because OpenCode does not currently expose a stable error identifier for safe deduplication.
 
