@@ -1,5 +1,6 @@
 # oma docs generated artifacts
 docs/generated/
+docs/plans/
 
 # Local dependencies and generated package artifacts
 **/node_modules/
