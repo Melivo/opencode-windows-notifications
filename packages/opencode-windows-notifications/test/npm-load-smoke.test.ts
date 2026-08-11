@@ -9,6 +9,7 @@ import {
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, relative, resolve, sep } from "node:path"
+import { pathToFileURL } from "node:url"
 import { expect, test } from "bun:test"
 
 import {
@@ -20,6 +21,7 @@ import {
 const PACKAGE_NAME = "opencode-windows-notifications"
 const OPENCODE_VERSION = "1.18.16"
 const PACKAGE_SPEC = `${PACKAGE_NAME}@latest`
+const TUI_BUILD_MARKER = `${PACKAGE_NAME}@0.0.0/tui-v1`
 const packageRoot = resolve(import.meta.dir, "..")
 
 type CommandResult = Readonly<{
@@ -361,6 +363,26 @@ function serverEntrypoint(manifest: PackageManifest): string | undefined {
   return imported ?? fallback ?? stringProperty(manifest, "main")
 }
 
+function tuiEntrypoint(manifest: PackageManifest): string | undefined {
+  const exports = objectProperty(manifest, "exports")
+  const tui = exports?.["./tui"]
+  if (tui === undefined) return undefined
+  if (typeof tui === "string") return tui
+  if (!isUnknownRecord(tui)) {
+    gateBlocked(`${manifest.name}@${manifest.version} has invalid exports["./tui"]`)
+  }
+
+  const imported = tui.import
+  const fallback = tui.default
+  if (imported !== undefined && typeof imported !== "string") {
+    gateBlocked(`${manifest.name}@${manifest.version} has invalid TUI import entrypoint`)
+  }
+  if (fallback !== undefined && typeof fallback !== "string") {
+    gateBlocked(`${manifest.name}@${manifest.version} has invalid default TUI entrypoint`)
+  }
+  return imported ?? fallback
+}
+
 function runtimeDependencies(manifest: PackageManifest): string[] {
   const dependencies: string[] = []
 
@@ -681,9 +703,6 @@ test("loads the candidate exactly once through the isolated OpenCode 1.18.16 npm
       gateBlocked('packaging contract requires os === ["win32"]')
     }
     const exports = objectProperty(manifest, "exports")
-    if (exports?.["./tui"] !== undefined) {
-      gateBlocked("packaging contract forbids exports[\"./tui\"]")
-    }
     if (exports?.["./server"] === undefined && stringProperty(manifest, "main") === undefined) {
       gateBlocked("packaging contract requires exports[\"./server\"] or main")
     }
@@ -744,6 +763,47 @@ test("loads the candidate exactly once through the isolated OpenCode 1.18.16 npm
     )
     const buildMarker = markerMatch?.[0]
     if (!buildMarker) gateBlocked("deterministic build marker is absent from the packed entrypoint")
+
+    const packedTuiEntrypoint = (tuiEntrypoint(packedManifest) ?? "").replace(/^\.\//, "")
+    if (!packedTuiEntrypoint) gateBlocked("candidate package has no TUI entrypoint")
+    const candidateTuiEntrypoint = await readTarEntry(
+      tar,
+      tarballPath,
+      `package/${packedTuiEntrypoint}`,
+    )
+    if (!Buffer.from(candidateTuiEntrypoint).toString("utf8").includes(TUI_BUILD_MARKER)) {
+      gateBlocked("correct TUI build marker is absent from the packed TUI entrypoint")
+    }
+
+    const extractedCandidateDirectory = join(root, "packed-candidate-audit")
+    await mkdir(extractedCandidateDirectory, { recursive: true })
+    const extracted = await run([
+      tar,
+      "-xf",
+      tarballPath,
+      "-C",
+      extractedCandidateDirectory,
+    ], { cwd: root, timeoutMs: 15_000 })
+    if (extracted.exitCode !== 0) {
+      gateBlocked("candidate tarball could not be extracted for TUI export audit", extracted.stderr)
+    }
+    const extractedPackageRoot = await realpath(join(extractedCandidateDirectory, "package"))
+    const extractedTuiEntrypoint = await realpath(join(extractedPackageRoot, packedTuiEntrypoint))
+    if (!isWithin(extractedPackageRoot, extractedTuiEntrypoint)) {
+      gateBlocked("packed TUI entrypoint escapes the extracted candidate package")
+    }
+    const importedTuiModule: unknown = await import(pathToFileURL(extractedTuiEntrypoint).href)
+    if (!isUnknownRecord(importedTuiModule)) {
+      gateBlocked("packed TUI entrypoint does not export a module record")
+    }
+    const importedTuiEntry = importedTuiModule.default
+    if (
+      !isUnknownRecord(importedTuiEntry) ||
+      importedTuiEntry.id !== TUI_BUILD_MARKER ||
+      typeof importedTuiEntry.tui !== "function"
+    ) {
+      gateBlocked("packed TUI entrypoint default export has an invalid marker or tui function")
+    }
 
     // The candidate's packed manifest is the candidate-closure authority. T3
     // keeps @opencode-ai/plugin type-only, so its candidate runtime closure is
@@ -931,8 +991,9 @@ test("loads the candidate exactly once through the isolated OpenCode 1.18.16 npm
       if (forbidden in childEnv) gateBlocked(`forbidden child variable leaked: ${forbidden}`)
     }
 
-    // A PASS reaches this line only through the real OpenCode process. This test
-    // intentionally has no package import or dynamic-import fallback.
+    // A server-loader PASS reaches this line only through the real OpenCode
+    // process. The direct import above audits only the packed TUI export and is
+    // never a fallback for missing server-loader evidence.
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("GATE BLOCKED:")) {
       throw error

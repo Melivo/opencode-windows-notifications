@@ -125,12 +125,28 @@ const permission: EventPermissionAsked = {
     always: [],
   },
 }
+const question = {
+  id: "event-question-1",
+  type: "question.v2.asked",
+  properties: {
+    id: "question-1",
+    sessionID: "session-root",
+    questions: [],
+  },
+} as const
+const legacyQuestion = {
+  ...question,
+  id: "event-question-2",
+  type: "question.asked",
+} as const
 
 await hooks.event({ event: completed })
 await hooks.event({ event: idle })
 await hooks.event({ event: error })
 await hooks.event({ event: permission })
 await hooks.event({ event: permission })
+await hooks.event({ event: question as never })
+await hooks.event({ event: legacyQuestion as never })
 await Promise.resolve()
 await Bun.sleep(20)
 

@@ -1,4 +1,8 @@
-import type { CreateOnEvent, CreateOnPermission } from "../contract.js"
+import type {
+  CreateOnEvent,
+  CreateOnPermission,
+  CreateOnQuestion,
+} from "../contract.js"
 
 const IDLE_CONTENT = Object.freeze({
   title: "OpenCode" as const,
@@ -10,13 +14,20 @@ const PERMISSION_CONTENT = Object.freeze({
   body: "Aktion erfordert deine Freigabe" as const,
 })
 
+const QUESTION_CONTENT = Object.freeze({
+  title: "OpenCode" as const,
+  body: "Deine Auswahl wird benötigt" as const,
+})
+
 export const MAX_TRACKED_SESSIONS = 256
 export const MAX_RESPONSE_IDS_PER_SESSION = 128
 export const MAX_PERMISSION_IDS_PER_SESSION = 128
+export const MAX_QUESTION_IDS_PER_SESSION = 128
 
 type SessionState = {
   readonly assistantResponseIDs: Set<string>
   readonly permissionIDs: Set<string>
+  readonly questionIDs: Set<string>
   assistantEpoch: number
   lastIdleEpoch: number
 }
@@ -29,6 +40,7 @@ function createSessionState(): SessionState {
   return {
     assistantResponseIDs: new Set<string>(),
     permissionIDs: new Set<string>(),
+    questionIDs: new Set<string>(),
     assistantEpoch: 0,
     lastIdleEpoch: 0,
   }
@@ -158,6 +170,49 @@ export const createOnPermission: CreateOnPermission = ({ notify }) => {
       )
     } catch {
       // Permission eligibility and transport failures must fail open.
+    }
+  }
+}
+
+export const createOnQuestion: CreateOnQuestion = ({ notify }) => {
+  const stateBySessionID = new Map<string, SessionState>()
+
+  return async (question, hostContext): Promise<void> => {
+    try {
+      if (!hasStableID(question.sessionID) || !hasStableID(question.id)) {
+        return
+      }
+
+      const session = await hostContext.resolveSession(question.sessionID)
+      if (
+        !session ||
+        !hasStableID(session.id) ||
+        (session.parentID !== undefined && session.parentID !== "")
+      ) {
+        return
+      }
+
+      const state = sessionStateFor(stateBySessionID, session.id)
+      if (
+        !trackID(
+          state.questionIDs,
+          question.id,
+          MAX_QUESTION_IDS_PER_SESSION,
+        )
+      ) {
+        return
+      }
+
+      await notify(
+        Object.freeze({
+          event: "question.asked",
+          title: QUESTION_CONTENT.title,
+          body: QUESTION_CONTENT.body,
+          sessionID: session.id,
+        }),
+      )
+    } catch {
+      // Question eligibility and delivery failures must fail open.
     }
   }
 }

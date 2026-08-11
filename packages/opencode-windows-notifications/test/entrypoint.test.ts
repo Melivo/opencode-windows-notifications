@@ -198,11 +198,10 @@ describe("documented server plugin entrypoint", () => {
     expect("tui" in plugin).toBe(false)
   })
 
-  test("packages the server entrypoint without a TUI subpath", async () => {
+  test("packages the documented server entrypoint", async () => {
     const manifest = await Bun.file(resolve(packageRoot, "package.json")).json()
 
     expect(manifest.os).toEqual(["win32"])
-    expect(manifest.exports["./tui"]).toBeUndefined()
     expect(manifest.exports["./server"]).toBeDefined()
     expect(manifest.main).toBe("./dist/src/index.js")
     expect(manifest.dependencies?.["@opencode-ai/plugin"]).toBeUndefined()
@@ -219,7 +218,7 @@ describe("documented server plugin entrypoint", () => {
     )
   })
 
-  test("handles runtime permission events through the documented event hook", async () => {
+  test("keeps server event handling limited to idle and permission behavior", async () => {
     const entrypointSource = await Bun.file(
       resolve(packageRoot, "src/index.ts"),
     ).text()
@@ -236,6 +235,10 @@ describe("documented server plugin entrypoint", () => {
     expect(source).not.toContain("PluginModule")
     expect(source).not.toContain("@opencode-ai/plugin/tui")
     expect(factorySource).toContain('event.type !== "permission.asked"')
+    expect(factorySource).not.toContain('"question.asked"')
+    expect(factorySource).not.toContain('"question.v2.asked"')
+    expect(factorySource).not.toContain("createOnQuestion")
+    expect(factorySource).not.toContain('"tool.execute.before"')
     expect(contractSource).toContain("export type PermissionRequest")
     expect(source).not.toContain('case "session.error"')
     expect(source).not.toContain("console.")
@@ -246,12 +249,7 @@ describe("documented server plugin entrypoint", () => {
   test("uses path-based session lookup and body-wrapped host logging", async () => {
     const result = await runProbe("success")
 
-    expect(result.sessionPaths).toEqual([
-      "session-root",
-      "session-root",
-      "session-root",
-      "session-root",
-    ])
+    expect(result.sessionPaths).toEqual(Array(4).fill("session-root"))
     expect(result.notifications.map((entry: { event: string }) => entry.event))
       .toEqual(["session.idle", "permission.asked"])
     expect(result.logs[0]).toEqual({
@@ -351,7 +349,7 @@ describe("internal plugin factory", () => {
     ])
   })
 
-  test("handles each runtime primary-session permission event exactly once", async () => {
+  test("handles permission events once and ignores server question events", async () => {
     const harness = createHostHarness()
     const notifications: Notification[] = []
     const testPlugin = createPlugin({
@@ -378,6 +376,17 @@ describe("internal plugin factory", () => {
     await onPermissionAsk(input, output)
     await onEvent({ event: permissionAsked("session-root", " ") })
     await onEvent({ event: permissionAsked(" ", "permission-2") })
+    const questionEvent = {
+      id: "event-question-1",
+      type: "question.v2.asked",
+      properties: {
+        id: "question-1",
+        sessionID: "session-root",
+        questions: [],
+      },
+    } as const
+    await onEvent({ event: questionEvent as never })
+    await onEvent({ event: questionEvent as never })
 
     expect(notifications).toEqual([
       {

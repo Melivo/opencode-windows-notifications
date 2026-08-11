@@ -2,17 +2,19 @@
 
 Native Windows toast notifications for [OpenCode](https://opencode.ai/).
 
-The plugin sends fixed, privacy-safe notifications when an assistant response completes or OpenCode asks for a permission decision. It is Windows-only and notification failures never change OpenCode session state.
+The package has two OpenCode entrypoints: the server plugin owns idle and permission notifications, and the TUI plugin owns menu/question notifications. Every toast uses fixed, privacy-safe text, only primary sessions are eligible, Windows is the only active runtime, and notification failures never change OpenCode session state.
 
 ## Install
 
 Install the plugin through OpenCode:
 
 ```powershell
-opencode plugin opencode-windows-notifications
+opencode plugin opencode-windows-notifications --global
 ```
 
-OpenCode adds the package to its `opencode.json` plugin array. To avoid duplicate host notifications, add the following setting once:
+OpenCode registers the base package name `opencode-windows-notifications` in both the `opencode.json`/`opencode.jsonc` server plugin array and the `tui.json`/`tui.jsonc` TUI plugin configuration.
+
+To avoid duplicate host attention notifications, add the following setting once:
 
 ```json
 {
@@ -28,6 +30,9 @@ OpenCode adds the package to its `opencode.json` plugin array. To avoid duplicat
 | --- | --- |
 | `session.idle` | `Answer finished` |
 | `permission.asked` | `Action needs permission` |
+| `question.asked` | `Your selection is needed` |
+
+`question.asked` is intentionally handled only by the TUI entrypoint when a menu opens. The server plugin remains idle/permission-only and ignores question events so one menu prompt cannot create competing server and TUI toasts.
 
 Error notifications are intentionally not sent because OpenCode does not currently expose a stable error identifier for safe deduplication.
 
@@ -43,10 +48,10 @@ Error notifications are intentionally not sent because OpenCode does not current
 If OpenCode does not load the plugin after installation, reinstall it with:
 
 ```powershell
-opencode plugin opencode-windows-notifications --force
+opencode plugin opencode-windows-notifications --global --force
 ```
 
-Ensure the OpenCode version is between `1.18.16` and `1.19.0`, and verify that `attention.notifications` is disabled in `~/.config/opencode/tui.jsonc` if duplicate notifications appear.
+Ensure the OpenCode version is between `1.18.16` and `1.19.0`, verify that the base package name is registered through TUI plugin configuration, and confirm `attention.notifications` is disabled in `~/.config/opencode/tui.jsonc` if duplicate notifications appear.
 
 ## License
 

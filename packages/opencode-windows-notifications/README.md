@@ -1,24 +1,26 @@
 # OpenCode Windows Notifications
 
-Native Windows toast notifications for OpenCode server plugins.
+Native Windows toast notifications for OpenCode server and TUI plugins.
 
 ## Compatibility and scope
 
 - Package name: `opencode-windows-notifications`.
 - OpenCode version range: `>=1.18.16 <1.19.0` (`engines.opencode` in `package.json`). The package is compiled and verified against `@opencode-ai/plugin@1.18.16`.
-- Entrypoint: `exports["./server"]` and `main` both point at `./dist/src/index.js`.
-- Plugin contract: a named, typed `Plugin` export named `plugin`; the default export is optional and, in this package, is the same reference as `plugin` to avoid duplicate hook registration.
+- Server entrypoint: `exports["./server"]` and `main` both point at `./dist/src/index.js`.
+- TUI entrypoint: `exports["./tui"]` points at `./dist/src/tui-entry.js` for TUI-only `question.asked` menu attention.
+- Server plugin contract: a named, typed `Plugin` export named `plugin`; the default export is optional and, in this package, is the same reference as `plugin` to avoid duplicate hook registration.
+- TUI plugin contract: the default export is the TUI module shape with `id` and `tui` only.
 - Platform scope: Windows only (`os: ["win32"]`). On non-Windows hosts the runtime is inert and must not start PowerShell or any fallback transport.
 
-## Installation through `opencode.json`
+## Installation and registration
 
 Install the published package through OpenCode:
 
 ```powershell
-opencode plugin opencode-windows-notifications
+opencode plugin opencode-windows-notifications --global
 ```
 
-OpenCode adds the package name to the documented plugin array in `opencode.json`:
+OpenCode adds the package name to the documented server plugin array in `opencode.json`:
 
 ```json
 {
@@ -27,6 +29,16 @@ OpenCode adds the package name to the documented plugin array in `opencode.json`
 ```
 
 The verified OpenCode 1.18.16 npm server-plugin loader resolves the package through the configured plugin array and then loads `exports["./server"]` or `main`.
+
+OpenCode also registers the same base package name in the documented TUI plugin configuration in `tui.json`/`tui.jsonc`:
+
+```json
+{
+  "plugin": ["opencode-windows-notifications"]
+}
+```
+
+Keep the server and TUI registrations separate by file: `opencode.json`/`opencode.jsonc` loads the server entrypoint, while `tui.json`/`tui.jsonc` loads the TUI entrypoint from the same base package name for TUI question/menu events.
 
 ## One-time host setting
 
@@ -44,25 +56,28 @@ If this setting is omitted while host attention notifications remain enabled, te
 
 ## Implemented events and fixed toast text
 
-The package implements the typed `session.idle` event path and the runtime permission event:
+The package implements server notifications for completed/idle work and permissions, plus the TUI notification for selection-menu questions:
 
-| Typed host signal | Status | Title | Body |
+| Host signal | Owner | Status | Title | Body |
 | --- | --- | --- | --- |
-| `session.idle` | Implemented | `OpenCode` | `Antwort abgeschlossen` |
-| `permission.asked` | Implemented | `OpenCode` | `Aktion erfordert deine Freigabe` |
-| `session.error` | Excluded | n/a | n/a |
+| Assistant message completion / `session.idle` | Server entrypoint | Implemented | `OpenCode` | `Antwort abgeschlossen` |
+| `permission.asked` | Server entrypoint | Implemented | `OpenCode` | `Aktion erfordert deine Freigabe` |
+| `question.asked` selection-menu open | TUI entrypoint | Implemented | `OpenCode` | `Deine Auswahl wird benötigt` |
+| `session.error` | n/a | Excluded | n/a | n/a |
 
 OpenCode 1.18.16 emits runtime permission requests as `permission.asked` events. The implementation validates the event's `id` and `sessionID`, rejects blank IDs, and routes them through the same primary-session eligibility and bounded deduplication path. Repeated delivery of the same stable permission ID causes one transport attempt.
 
+TUI selection menus are emitted as `question.asked` events. The TUI entrypoint reads only the stable question `id` and `sessionID`, never the question text, menu labels, tool data, prompt, response, file path, command, or raw error content. The server entrypoint does not own question/menu notifications, so one menu-open event should have one native-toast owner when the TUI entrypoint is registered.
+
 `session.error` is excluded because no stable, dedicated error transition or dedupe identifier has been confirmed. The generic event envelope ID is not treated as an error-transition ID.
 
-The implementation also maps completed assistant-message updates into the same fixed completion toast path, but it does not expose dynamic prompt, response, file path, command, or raw error content.
+The implementation maps completed assistant-message updates into the same fixed completion toast path, but it does not expose dynamic prompt, response, file path, command, menu, question, or raw error content.
 
 ## TUI and session eligibility limits
 
 Only primary sessions are eligible. Sessions with a non-empty `parentID`, unknown sessions, and failed session lookups are ignored.
 
-This is a primary-session proxy, not an authoritative TUI guarantee. OpenCode 1.18.16 does not expose a confirmed server-plugin `client === "tui"` discriminator for this package, so TUI-only behavior must be described as a residual risk rather than a guarantee.
+This is a primary-session proxy. The server entrypoint does not claim an authoritative TUI-only discriminator; TUI menu notifications are isolated in the separate TUI subpath entrypoint.
 
 ## Privacy and reliability
 
@@ -78,5 +93,5 @@ This is a primary-session proxy, not an authoritative TUI guarantee. OpenCode 1.
 If the plugin does not load after installation, reinstall it with:
 
 ```powershell
-opencode plugin opencode-windows-notifications --force
+opencode plugin opencode-windows-notifications --global --force
 ```

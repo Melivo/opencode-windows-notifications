@@ -12,6 +12,8 @@ The plugin needs Windows-native notifications while preserving OpenCode availabi
 
 Use a short-lived Windows PowerShell process with a static encoded command, `shell: false`, and a base64-encoded fixed notification payload on stdin. Validate the payload again inside PowerShell before calling `Windows.UI.Notifications` for `ai.opencode.desktop`.
 
+The same transport boundary is shared by the server and TUI entrypoints. Server hooks remain idle/permission-only, while the TUI entrypoint is the only path that can request the fixed menu/question toast.
+
 ## Alternatives Rejected
 
 - Terminal escape sequences: unsuitable for the target Windows Terminal behavior.

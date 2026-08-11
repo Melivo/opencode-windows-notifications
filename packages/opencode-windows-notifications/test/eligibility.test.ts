@@ -10,7 +10,9 @@ import type {
 import {
   createOnEvent,
   createOnPermission,
+  createOnQuestion,
   MAX_PERMISSION_IDS_PER_SESSION,
+  MAX_QUESTION_IDS_PER_SESSION,
   MAX_RESPONSE_IDS_PER_SESSION,
   MAX_TRACKED_SESSIONS,
 } from "../src/eligibility/index.js"
@@ -32,6 +34,10 @@ function permission(
     metadata: {},
     time: { created: 1 },
   }
+}
+
+function question(id: string, sessionID = "session-root") {
+  return { id, sessionID }
 }
 
 function recorder() {
@@ -150,6 +156,31 @@ describe("server-event eligibility", () => {
     expect(hostSession).toEqual({ id: "session-root" })
   })
 
+  test("emits each stable question once without exposing question content", async () => {
+    const { notifications, notify } = recorder()
+    const onQuestion = createOnQuestion({ notify })
+
+    await onQuestion(question("question-1"), rootSession())
+    await onQuestion(question("question-1"), rootSession())
+    await onQuestion(question("question-2"), rootSession())
+    await onQuestion(question(" "), rootSession())
+
+    expect(notifications).toEqual([
+      {
+        event: "question.asked",
+        title: "OpenCode",
+        body: "Deine Auswahl wird benötigt",
+        sessionID: "session-root",
+      },
+      {
+        event: "question.asked",
+        title: "OpenCode",
+        body: "Deine Auswahl wird benötigt",
+        sessionID: "session-root",
+      },
+    ])
+  })
+
   test("bounds permission dedupe while retaining recently observed IDs", async () => {
     const { notifications, notify } = recorder()
     const onPermission = createOnPermission({ notify })
@@ -166,6 +197,24 @@ describe("server-event eligibility", () => {
     await onPermission(permission("permission-2"), context)
 
     expect(notifications).toHaveLength(MAX_PERMISSION_IDS_PER_SESSION + 2)
+  })
+
+  test("bounds question dedupe while retaining recently observed IDs", async () => {
+    const { notifications, notify } = recorder()
+    const onQuestion = createOnQuestion({ notify })
+    const context = rootSession()
+
+    for (let index = 1; index <= MAX_QUESTION_IDS_PER_SESSION; index += 1) {
+      await onQuestion(question(`question-${index}`), context)
+    }
+    await onQuestion(question("question-1"), context)
+    await onQuestion(
+      question(`question-${MAX_QUESTION_IDS_PER_SESSION + 1}`),
+      context,
+    )
+    await onQuestion(question("question-2"), context)
+
+    expect(notifications).toHaveLength(MAX_QUESTION_IDS_PER_SESSION + 2)
   })
 
   test("bounds response dedupe while retaining recently observed IDs", async () => {

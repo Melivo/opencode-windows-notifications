@@ -27,6 +27,12 @@ const notifications = {
     body: "Aktion erfordert deine Freigabe",
     sessionID: "session-secret",
   },
+  question: {
+    event: "question.asked",
+    title: "OpenCode",
+    body: "Deine Auswahl wird benötigt",
+    sessionID: "session-secret",
+  },
 } as const satisfies Record<string, Notification>
 
 type Scenario =
@@ -234,6 +240,37 @@ describe("Windows notification transport", () => {
       body: "Antwort abgeschlossen",
     })
     expect(idleCall!.stdin).not.toContain("session-secret")
+  })
+
+  test("encodes the exact Unicode question allowlist without a raw-template escape", async () => {
+    const process = controlledSpawn({ kind: "close", code: 0 })
+
+    await expect(
+      createNotify({ platform: "win32", spawn: process.spawn })(
+        notifications.question,
+      ),
+    ).resolves.toEqual({ delivered: true })
+
+    const call = process.calls[0]
+    expect(call).toBeDefined()
+    const source = Buffer.from(call!.args[3]!, "base64").toString("utf16le")
+    const unicodeEscape = "\\u" + "00F6"
+
+    expect(source).not.toContain(unicodeEscape)
+    expect(source).toContain(
+      "$questionBody = 'Deine Auswahl wird ben' + [char]0x00F6 + 'tigt'",
+    )
+    expect(source).toContain(
+      "(($eventType -ceq 'question.asked') -and ($body -ceq $questionBody))",
+    )
+
+    const payload = JSON.parse(
+      Buffer.from(call!.stdin!, "base64").toString("utf8"),
+    )
+    expect(payload.body).toBe(
+      "Deine Auswahl wird ben" + String.fromCharCode(0x00f6) + "tigt",
+    )
+    expect(payload.body).toBe(notifications.question.body)
   })
 
   test("keeps OSC, BEL, and ESC out of every spawn input and payload", async () => {

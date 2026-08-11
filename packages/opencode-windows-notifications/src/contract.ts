@@ -2,6 +2,7 @@ export type NotificationEvent =
   | "session.idle"
   | "session.error"
   | "permission.asked"
+  | "question.asked"
 
 export type EligibleEvent =
   | Readonly<{
@@ -27,6 +28,7 @@ export type Notification = Readonly<{
     | "Antwort abgeschlossen"
     | "Sitzung fehlgeschlagen"
     | "Aktion erfordert deine Freigabe"
+    | "Deine Auswahl wird benötigt"
   sessionID: string
 }>
 
@@ -68,3 +70,17 @@ export type OnPermission = (
 export type CreateOnPermission = (
   dependencies: Readonly<{ notify: Notify }>,
 ) => OnPermission
+
+export type QuestionRequest = Readonly<{
+  id: string
+  sessionID: string
+}>
+
+export type OnQuestion = (
+  question: QuestionRequest,
+  hostContext: HostContext,
+) => Promise<void>
+
+export type CreateOnQuestion = (
+  dependencies: Readonly<{ notify: Notify }>,
+) => OnQuestion

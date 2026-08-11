@@ -8,6 +8,10 @@ Plugin hooks, session lookups, logging, and transport delivery must fail open. A
 
 Notifications use a closed event/body allowlist. Prompt text, responses, paths, commands, and raw errors do not cross the eligibility-to-transport boundary.
 
+## Separate Server And TUI Ownership
+
+The package can expose both server and TUI entrypoints, but each host attention moment has one owner. Server hooks own idle and permission toasts; the TUI entrypoint owns menu/question toasts registered through TUI configuration.
+
 ## Reject Ambiguity
 
 Unknown sessions, missing stable identifiers, malformed events, and unconfirmed error transitions produce no notification. Correct deduplication is preferred over best-effort delivery.

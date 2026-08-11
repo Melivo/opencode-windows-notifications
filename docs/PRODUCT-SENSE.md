@@ -2,7 +2,7 @@
 
 ## User Mental Model
 
-The user expects a concise Windows notification only when OpenCode needs attention: an answer finished or an approval is required. A notification must not disclose conversation content on a lock screen or distract the user with subagent activity.
+The user expects a concise Windows notification only when OpenCode needs attention: an answer finished, an approval is required, or a TUI selection menu is waiting. A notification must not disclose conversation content on a lock screen or distract the user with subagent activity.
 
 ## Product Principles
 
@@ -14,3 +14,5 @@ The user expects a concise Windows notification only when OpenCode needs attenti
 ## Prioritization
 
 Prioritize confirmed host contracts and notification correctness over feature breadth. Do not add error toasts, dynamic copy, or configuration until stable host identifiers make their behavior safe and testable.
+
+Menu-question attention belongs to the TUI entrypoint registered through TUI configuration. Keep the server entrypoint focused on idle and permission signals, and disable built-in host attention notifications with `attention.notifications:false` where duplicate desktop attention would otherwise occur.

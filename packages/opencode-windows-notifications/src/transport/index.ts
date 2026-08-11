@@ -63,6 +63,7 @@ const EXPECTED_BODIES = Object.freeze({
   "session.idle": "Antwort abgeschlossen",
   "session.error": "Sitzung fehlgeschlagen",
   "permission.asked": "Aktion erfordert deine Freigabe",
+  "question.asked": "Deine Auswahl wird benötigt",
 } satisfies Readonly<Record<NotificationEvent, Notification["body"]>>)
 
 const POWERSHELL_SOURCE = String.raw`
@@ -88,10 +89,12 @@ try {
   $eventType = [string]$payload.event
   $title = [string]$payload.title
   $body = [string]$payload.body
+  $questionBody = 'Deine Auswahl wird ben' + [char]0x00F6 + 'tigt'
   $isAllowed =
     (($eventType -ceq 'session.idle') -and ($body -ceq 'Antwort abgeschlossen')) -or
     (($eventType -ceq 'session.error') -and ($body -ceq 'Sitzung fehlgeschlagen')) -or
-    (($eventType -ceq 'permission.asked') -and ($body -ceq 'Aktion erfordert deine Freigabe'))
+    (($eventType -ceq 'permission.asked') -and ($body -ceq 'Aktion erfordert deine Freigabe')) -or
+    (($eventType -ceq 'question.asked') -and ($body -ceq $questionBody))
 
   if (($title -cne 'OpenCode') -or (-not $isAllowed)) {
     exit 43

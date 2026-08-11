@@ -19,7 +19,7 @@ async function runScenario(scenario: "success" | "failure" | "subsession") {
 }
 
 describe("documented hook to transport integration", () => {
-  test("dispatches one transport call per new eligible idle and permission input", async () => {
+  test("dispatches idle and permission while ignoring server question inputs", async () => {
     const result = await runScenario("success")
 
     expect(result.transportCalls).toBe(2)
