@@ -617,19 +617,11 @@ async function makeIsolatedEnvironment(
   }
 }
 
-function hasExpectedRegistryResolution(
+function hasExpectedLoaderDependencyResolution(
   audit: LoopbackRegistryAudit,
   dependencyClosure: readonly RegistryPackage[],
-  candidateSha256: string,
 ): boolean {
-  if (
-    audit.blockedRequests.length !== 0 ||
-    audit.metadataRequests < 1 ||
-    audit.tarballRequests !== 1 ||
-    audit.servedTarballSha256 !== candidateSha256
-  ) {
-    return false
-  }
+  if (audit.blockedRequests.length !== 0) return false
 
   return dependencyClosure.every((artifact) => {
     const requests = audit.packageRequests[artifact.packageName]
@@ -638,6 +630,46 @@ function hasExpectedRegistryResolution(
       audit.servedTarballSha256ByPackage[artifact.packageName] === artifact.tarballSha256
   })
 }
+
+function hasExpectedRegistryResolution(
+  audit: LoopbackRegistryAudit,
+  dependencyClosure: readonly RegistryPackage[],
+  candidateSha256: string,
+): boolean {
+  return audit.metadataRequests >= 1 &&
+    audit.tarballRequests === 1 &&
+    audit.servedTarballSha256 === candidateSha256 &&
+    hasExpectedLoaderDependencyResolution(audit, dependencyClosure)
+}
+
+test("distinguishes loader dependencies from candidate resolution", () => {
+  const dependency = Object.freeze({
+    packageName: "@opencode-ai/plugin",
+    version: OPENCODE_VERSION,
+    manifest: Object.freeze({}),
+    tarball: new Uint8Array(),
+    tarballSha256: "dependency-sha256",
+    tarballSha1: "dependency-sha1",
+    tarballSha512Base64: "dependency-sha512",
+  }) satisfies RegistryPackage
+  const audit = Object.freeze({
+    requests: Object.freeze([]),
+    metadataRequests: 0,
+    tarballRequests: 0,
+    packageRequests: Object.freeze({
+      [dependency.packageName]: Object.freeze({ metadata: 1, tarball: 1 }),
+    }),
+    blockedRequests: Object.freeze([]),
+    optionalMissRequests: Object.freeze([]),
+    servedTarballSha256: undefined,
+    servedTarballSha256ByPackage: Object.freeze({
+      [dependency.packageName]: dependency.tarballSha256,
+    }),
+  }) satisfies LoopbackRegistryAudit
+
+  expect(hasExpectedLoaderDependencyResolution(audit, [dependency])).toBe(true)
+  expect(hasExpectedRegistryResolution(audit, [dependency], "candidate-sha256")).toBe(false)
+})
 
 test("terminates a loader process after incremental evidence instead of awaiting natural exit", async () => {
   const evidence = "initialization build-marker local-registry-resolution"
@@ -693,8 +725,10 @@ test("loads the candidate exactly once through the isolated OpenCode 1.18.16 npm
     }
 
     const opencodeBin = process.env.OPENCODE_BIN || Bun.which("opencode")
+    const npm = Bun.which("npm")
     const tar = Bun.which("tar")
     if (!opencodeBin) gateBlocked("real OpenCode executable was not found")
+    if (!npm) gateBlocked("npm is required to stage OpenCode's pinned loader dependencies")
     if (!tar) gateBlocked("a local tar reader is required to audit the candidate")
 
     const manifestValue: unknown = await Bun.file(join(packageRoot, "package.json")).json()
@@ -828,6 +862,44 @@ test("loads the candidate exactly once through the isolated OpenCode 1.18.16 npm
     const childEnv = await makeIsolatedEnvironment(root, registry.url, opencodeBin)
     const configDirectory = join(childEnv.XDG_CONFIG_HOME, "opencode")
     await mkdir(configDirectory, { recursive: true })
+    await writeFile(
+      join(configDirectory, "package.json"),
+      JSON.stringify({ private: true }),
+      "utf8",
+    )
+    const stagedLoaderDependencies = await run([
+      npm,
+      "install",
+      `@opencode-ai/plugin@${OPENCODE_VERSION}`,
+      "--save-exact",
+      "--package-lock=true",
+      "--ignore-scripts",
+      "--omit=dev",
+      "--no-audit",
+      "--no-fund",
+    ], {
+      cwd: configDirectory,
+      env: childEnv,
+      timeoutMs: 60_000,
+    })
+    if (stagedLoaderDependencies.exitCode !== 0) {
+      gateBlocked(
+        "could not stage OpenCode's pinned loader dependencies",
+        `${stagedLoaderDependencies.stdout}\n${stagedLoaderDependencies.stderr}`,
+      )
+    }
+
+    const stagedAudit = registry.audit()
+    if (
+      stagedAudit.metadataRequests !== 0 ||
+      stagedAudit.tarballRequests !== 0 ||
+      !hasExpectedLoaderDependencyResolution(stagedAudit, dependencyClosure.packages)
+    ) {
+      gateBlocked(
+        "loader dependency setup did not complete before candidate resolution",
+        JSON.stringify(stagedAudit),
+      )
+    }
     await writeFile(
       join(configDirectory, "opencode.json"),
       JSON.stringify({ plugin: [PACKAGE_NAME] }),
